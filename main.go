@@ -1,16 +1,17 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"html"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 
+	"github.com/antonholmquist/jason"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
@@ -19,28 +20,57 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hello, %q", html.EscapeString(r.URL.Path))
 }
 
-type ItemWrapper struct {
-	Item interface{} `json:"item"`
-}
-
 type EventEntity struct {
-	Topic         string      `json:"topic"`
-	UserId        int         `json:"user_id"`
-	UserName      string      `json:"user_name"`
-	ItemType      string      `json:"item_type"`
-	ItemId        int         `json:"item_id"`
-	CreatedOn     string      `json:"created_on"`
-	ShopSubdomain string      `json:"shop_subdomain"`
-	Embedded      ItemWrapper `json:"_embedded"`
+	Topic         string
+	UserId        int64
+	UserName      string
+	ItemType      string
+	ItemId        int64
+	CreatedOn     string
+	ShopSubdomain string
+	data          *jason.Object
 }
 
-type TemplateEntity struct {
-	FileName string `json:"file_name"`
+func NewEvent(reader io.Reader) (*EventEntity, error) {
+	obj, err := jason.NewObjectFromReader(reader)
+	if err != nil {
+		return nil, err
+	}
+	topic, err := obj.GetString("topic")
+	if err != nil {
+		return nil, err
+	}
+	userId, err := obj.GetInt64("user_id")
+	if err != nil {
+		return nil, err
+	}
+	userName, err := obj.GetString("user_name")
+	if err != nil {
+		return nil, err
+	}
+	createdOn, err := obj.GetString("created_on")
+	if err != nil {
+		return nil, err
+	}
+	subdomain, err := obj.GetString("shop_subdomain")
+	if err != nil {
+		return nil, err
+	}
+	evt := &EventEntity{
+		Topic:         topic,
+		UserId:        userId,
+		UserName:      userName,
+		CreatedOn:     createdOn,
+		ShopSubdomain: subdomain,
+		data:          obj,
+	}
+
+	return evt, nil
 }
 
 type App struct {
 	dir        string
-	eventsChan chan EventEntity
+	eventsChan chan *EventEntity
 }
 
 func (app *App) start() {
@@ -68,30 +98,30 @@ func (app *App) start() {
 	}
 }
 
-func (app *App) prepareDir(event EventEntity) (string, error) {
+func (app *App) prepareDir(event *EventEntity) (string, error) {
 	path := filepath.Join(app.dir, event.ShopSubdomain)
 	return path, os.MkdirAll(path, 0700)
 }
 
-func (app *App) processTemplate(themeDir string, event EventEntity) {
+func (app *App) processTemplate(themeDir string, event *EventEntity) {
 	log.Printf("process template %s", event.CreatedOn)
-	template, ok := event.Embedded.Item.(TemplateEntity)
-	if !ok {
-		log.Println("ERR")
+	fileName, err := event.data.GetString("_embedded", "item", "file_name")
+	if err != nil {
+		log.Println("ERR", err)
 		return
 	}
-	log.Println(template.FileName)
+	log.Println(fileName)
 }
 
-func (app *App) processTemplateDeleted(themeDir string, event EventEntity) {
-
-}
-
-func (app *App) processAsset(themeDir string, event EventEntity) {
+func (app *App) processTemplateDeleted(themeDir string, event *EventEntity) {
 
 }
 
-func (app *App) processAssetDeleted(themeDir string, event EventEntity) {
+func (app *App) processAsset(themeDir string, event *EventEntity) {
+
+}
+
+func (app *App) processAssetDeleted(themeDir string, event *EventEntity) {
 
 }
 
@@ -100,8 +130,7 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Please send a request body", http.StatusBadRequest)
 		return
 	}
-	var event EventEntity
-	err := json.NewDecoder(r.Body).Decode(&event)
+	event, err := NewEvent(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -131,7 +160,7 @@ func main() {
 	flag.StringVar(&dir, "dir", "./", "root directory to write Git repos into")
 	flag.Parse()
 
-	eventsChan := make(chan EventEntity, 10)
+	eventsChan := make(chan *EventEntity, 10)
 	app := &App{
 		dir:        dir,
 		eventsChan: eventsChan,
