@@ -9,8 +9,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 
 	"github.com/antonholmquist/jason"
 	"github.com/gorilla/handlers"
@@ -22,6 +24,7 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type EventEntity struct {
+	EventId       int64
 	Topic         string
 	UserId        int64
 	UserName      string
@@ -57,7 +60,12 @@ func NewEvent(reader io.Reader) (*EventEntity, error) {
 	if err != nil {
 		return nil, err
 	}
+	eventId, err := obj.GetInt64("sequence")
+	if err != nil {
+		return nil, err
+	}
 	evt := &EventEntity{
+		EventId:       eventId,
 		Topic:         topic,
 		UserId:        userId,
 		UserName:      userName,
@@ -82,22 +90,38 @@ func (app *App) start() {
 			log.Printf("Could not prepare directory for %s. %s", event.ShopSubdomain, err.Error())
 		} else {
 			var err error
+			var fileName string
+			commit := true
 			switch event.Topic {
 			case "themes.updated.templates.updated", "themes.updated.templates.created":
-				err = app.processTemplate(themeDir, event)
+				fileName, err = app.processTemplate(themeDir, event)
 			case "themes.updated.templates.deleted":
-				err = app.processTemplateDeleted(themeDir, event)
+				fileName, err = app.processTemplateDeleted(themeDir, event)
 			case "themes.updated.assets.updated", "themes.updated.assets.created":
-				err = app.processAsset(themeDir, event)
+				fileName, err = app.processAsset(themeDir, event)
 			case "themes.updated.assets.deleted":
-				err = app.processAssetDeleted(themeDir, event)
+				fileName, err = app.processAssetDeleted(themeDir, event)
+			default:
+				commit = false
 			}
 
 			if err != nil {
 				log.Printf("Error processing %s: %s", event.Topic, err.Error())
+			} else if commit {
+				err = app.commit(fileName, event)
+				if err != nil {
+					log.Printf("Error committing %s: %s", event.Topic, err.Error())
+				}
 			}
 		}
 	}
+}
+
+func (app *App) commit(fileName string, event *EventEntity) error {
+	logLine := fileName + " - " + event.UserName + " evt:" + strconv.FormatInt(event.EventId, 10)
+	cmdStr := "cd " + app.dir + " && git init . && git add --all . && git commit -m '" + logLine + "'"
+	cmd := exec.Command("bash", "-c", cmdStr)
+	return cmd.Run()
 }
 
 func (app *App) prepareDir(event *EventEntity) (string, error) {
@@ -105,80 +129,80 @@ func (app *App) prepareDir(event *EventEntity) (string, error) {
 	return path, os.MkdirAll(path, 0700)
 }
 
-func (app *App) processTemplate(themeDir string, event *EventEntity) error {
+func (app *App) processTemplate(themeDir string, event *EventEntity) (string, error) {
 	fileName, err := event.data.GetString("_embedded", "item", "file_name")
 	if err != nil {
-		return err
+		return fileName, err
 	}
 	body, err := event.data.GetString("_embedded", "item", "body")
 	if err != nil {
-		return err
+		return fileName, err
 	}
 	path := filepath.Join(themeDir, fileName)
 	err = ioutil.WriteFile(path, []byte(body), 0644)
 	if err != nil {
-		return err
+		return fileName, err
 	}
 
-	return nil
+	return fileName, nil
 }
 
-func (app *App) processTemplateDeleted(themeDir string, event *EventEntity) error {
+func (app *App) processTemplateDeleted(themeDir string, event *EventEntity) (string, error) {
 	fileName, err := event.data.GetString("item_slug")
 	if err != nil {
-		return err
+		return fileName, err
 	}
 	path := filepath.Join(themeDir, fileName)
 	err = os.Remove(path)
 	if err != nil {
-		return err
+		return fileName, err
 	}
 
-	return nil
+	return fileName, nil
 }
 
-func (app *App) processAsset(themeDir string, event *EventEntity) error {
+func (app *App) processAsset(themeDir string, event *EventEntity) (string, error) {
 	fileName, err := event.data.GetString("_embedded", "item", "file_name")
 	if err != nil {
-		return err
+		return fileName, err
 	}
 
 	dir := filepath.Join(themeDir, "assets")
 	err = os.MkdirAll(dir, 0700)
 	if err != nil {
-		return err
+		return fileName, err
 	}
 	path := filepath.Join(dir, fileName)
 	link, err := event.data.GetString("_embedded", "item", "_links", "file", "href")
 	if err != nil {
-		return err
+		return fileName, err
 	}
 	resp, err := http.Get(link)
 	defer resp.Body.Close()
 	if err != nil {
-		return err
+		return fileName, err
 	}
 	out, err := os.Create(path)
 	defer out.Close()
 	if err != nil {
-		return err
+		return fileName, err
 	}
 	_, err = io.Copy(out, resp.Body)
-	return err
+	return fileName, err
 }
 
-func (app *App) processAssetDeleted(themeDir string, event *EventEntity) error {
+func (app *App) processAssetDeleted(themeDir string, event *EventEntity) (string, error) {
 	fileName, err := event.data.GetString("item_slug")
 	if err != nil {
-		return err
+		return fileName, err
 	}
 	path := filepath.Join(themeDir, "assets", fileName)
 	err = os.Remove(path)
 	if err != nil {
-		return err
+		return fileName, err
 	}
 
-	return nil
+	return fileName, nil
 }
 
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
