@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -42,26 +43,14 @@ func NewEvent(reader io.Reader) (*EventEntity, error) {
 	if err != nil {
 		return nil, err
 	}
-	userId, err := obj.GetInt64("user_id")
+	userId, _ := obj.GetInt64("user_id")
+	userName, _ := obj.GetString("user_name")
+	createdOn, _ := obj.GetString("created_on")
 	if err != nil {
 		return nil, err
 	}
-	userName, err := obj.GetString("user_name")
-	if err != nil {
-		return nil, err
-	}
-	createdOn, err := obj.GetString("created_on")
-	if err != nil {
-		return nil, err
-	}
-	subdomain, err := obj.GetString("shop_subdomain")
-	if err != nil {
-		return nil, err
-	}
-	eventId, err := obj.GetInt64("sequence")
-	if err != nil {
-		return nil, err
-	}
+	subdomain, _ := obj.GetString("shop_subdomain")
+	eventId, _ := obj.GetInt64("sequence")
 	evt := &EventEntity{
 		EventId:       eventId,
 		Topic:         topic,
@@ -127,6 +116,9 @@ func (app *App) commit(subdomain, fileName string, event *EventEntity) error {
 }
 
 func (app *App) prepareDir(event *EventEntity) (string, error) {
+	if event.ShopSubdomain == "" {
+		return "", errors.New("Missing shop subdomain")
+	}
 	path := filepath.Join(app.dir, event.ShopSubdomain)
 	return path, os.MkdirAll(path, 0700)
 }
@@ -224,7 +216,7 @@ func (app *App) HandleEvents(w http.ResponseWriter, r *http.Request) {
 
 	switch event.Topic {
 	case "activation":
-		log.Printf("Activated hook for shop %s", event.ShopSubdomain)
+		log.Println("Activated hook")
 		w.Header().Set("X-Hook-Pong", r.Header.Get("X-Hook-Ping"))
 		http.Error(w, "", http.StatusNoContent)
 	default:

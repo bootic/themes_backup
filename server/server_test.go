@@ -17,6 +17,20 @@ const (
 	DIR = "./test"
 )
 
+func TestActivation(t *testing.T) {
+	srv := setup()
+	defer teardown()
+
+	evt := `{
+		"topic": "activation"
+	}`
+
+	rec := srv("POST", "/events", evt)
+	if rec.Code != 204 {
+		t.Errorf("Expected status 204, got %d - %s", rec.Code, rec.Body)
+	}
+}
+
 func TestHandleTemplateEvent(t *testing.T) {
 	srv := setup()
 	defer teardown()
