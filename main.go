@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/antonholmquist/jason"
 	"github.com/gorilla/handlers"
@@ -78,6 +79,7 @@ func NewEvent(reader io.Reader) (*EventEntity, error) {
 }
 
 type App struct {
+	router     *mux.Router
 	dir        string
 	eventsChan chan *EventEntity
 }
@@ -108,7 +110,7 @@ func (app *App) start() {
 			if err != nil {
 				log.Printf("Error processing %s: %s", event.Topic, err.Error())
 			} else if commit {
-				err = app.commit(fileName, event)
+				err = app.commit(event.ShopSubdomain, fileName, event)
 				if err != nil {
 					log.Printf("Error committing %s: %s", event.Topic, err.Error())
 				}
@@ -117,9 +119,12 @@ func (app *App) start() {
 	}
 }
 
-func (app *App) commit(fileName string, event *EventEntity) error {
-	logLine := fileName + " - " + event.UserName + " evt:" + strconv.FormatInt(event.EventId, 10)
-	cmdStr := "cd " + app.dir + " && git init . && git add --all . && git commit -m '" + logLine + "'"
+func (app *App) commit(subdomain, fileName string, event *EventEntity) error {
+	dir := filepath.Join(app.dir, subdomain)
+	segments := strings.Split(event.Topic, ".")
+	action := segments[len(segments)-1]
+	logLine := event.UserName + ": " + action + " " + fileName + " - evt:" + strconv.FormatInt(event.EventId, 10)
+	cmdStr := "cd " + dir + " && git init . && git add --all . && git commit -m '" + logLine + "'"
 	cmd := exec.Command("bash", "-c", cmdStr)
 	return cmd.Run()
 }
@@ -206,6 +211,10 @@ func (app *App) processAssetDeleted(themeDir string, event *EventEntity) (string
 }
 
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	app.router.ServeHTTP(w, r)
+}
+
+func (app *App) HandleEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
 		http.Error(w, "Please send a request body", http.StatusBadRequest)
 		return
@@ -227,6 +236,22 @@ func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func NewApp(dir string) http.Handler {
+	eventsChan := make(chan *EventEntity, 10)
+	router := mux.NewRouter()
+	app := &App{
+		router:     router,
+		dir:        dir,
+		eventsChan: eventsChan,
+	}
+	router.HandleFunc("/", RootHandler).Methods("GET")
+	router.HandleFunc("/events", app.HandleEvents).Methods("POST")
+
+	go app.start()
+
+	return app
+}
+
 func main() {
 	maxProcs := runtime.NumCPU()
 	runtime.GOMAXPROCS(maxProcs)
@@ -240,16 +265,8 @@ func main() {
 	flag.StringVar(&dir, "dir", "./", "root directory to write Git repos into")
 	flag.Parse()
 
-	eventsChan := make(chan *EventEntity, 10)
-	app := &App{
-		dir:        dir,
-		eventsChan: eventsChan,
-	}
-	go app.start()
+	app := NewApp(dir)
 
-	router := mux.NewRouter()
-	router.HandleFunc("/", RootHandler).Methods("GET")
-	router.HandleFunc("/events", app.ServeHTTP).Methods("POST")
 	log.Printf("Serving on %s. Writing files to %s", host, dir)
-	log.Fatal(http.ListenAndServe(host, handlers.LoggingHandler(os.Stdout, router)))
+	log.Fatal(http.ListenAndServe(host, handlers.LoggingHandler(os.Stdout, app)))
 }
