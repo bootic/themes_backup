@@ -1,0 +1,72 @@
+## Git-based themes backup
+
+This app listens to `themes.*` [Bootic webhooks](https://api.bootic.net/rels/subscribe/) and backs up theme templates and assets in a local Git repository for each shop.
+
+### Start
+
+```
+go run main.go --host=localhost:3004 --dir /some/directory
+```
+
+| options   | description                              | example          |
+| `--host`  | host:port to bind this app to            | `localhost:3004` |
+| `--dir`   | directory path where to keep Git repos   | `/home/git/backup`|
+
+### Deploy
+
+Compile locally with `go build` and upload binary to server, or pull this repo into server and `go install`.
+
+### Subscribe webhooks
+
+You must use Bootic's API to subscribe a webhook pointing to this app's public URL.
+
+See [API docs](https://api.bootic.net/rels/subscribe/).
+
+```ruby
+# subscribe webhook using the Ruby client
+# the hub resource groups webhook-related endpoints
+hub = shop.hub
+# create webhook for "themes" topics, pointing to app's URL
+
+hook = hub.subscribe(
+  topic: "themes",
+  url: "https://some.app.com/events"
+)
+```
+
+Once subscribed, Bootic will send webhook notifications to this app's URL everytime the shop's theme changes. This app will keep track of changes in Git repos.
+
+```
+git log --pretty=oneline
+
+8ebcb9acf3e2b (HEAD -> master) Ismael Celis: updated layout.html - evt:7579
+44580db7241c2 Ismael Celis: updated layout.html - evt:7578
+cf9126b3cb7fb Ismael Celis: updated layout.html - evt:7577
+415b3ce537fdd Ismael Celis: updated layout.html - evt:7576
+d2e1cfed42efc Ismael Celis: updated layout.html - evt:7575
+```
+
+### Example webhook notification
+
+```
+POST /events HTTP/1.1
+Host: some.app.com
+Content-Type: application/json
+Content-Length: xxx
+
+{
+  "sequence": 1,
+  "shop_subdomain": "acme",
+  "topic": "themes.updated.templates.created",
+  "user_name": "Joe Bloggs",
+  "user_id": 123,
+  "created_on": "2018-08-10T20:00:00",
+  "_embedded": {
+    "item": {
+      "file_name": "foo.html",
+      "body": "Some HTML code here"
+    }
+  }
+}
+```
+
