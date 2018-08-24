@@ -88,11 +88,11 @@ func (app *App) start() {
 				app.processTemplate(themeDir, event)
 			case "themes.updated.templates.deleted":
 				app.processTemplateDeleted(themeDir, event)
-			case "themes.updated.asset.updated":
+			case "themes.updated.assets.updated":
 				app.processAsset(themeDir, event)
-			case "themes.updated.asset.created":
+			case "themes.updated.assets.created":
 				app.processAsset(themeDir, event)
-			case "themes.updated.asset.deleted":
+			case "themes.updated.assets.deleted":
 				app.processAssetDeleted(themeDir, event)
 			}
 		}
@@ -139,11 +139,51 @@ func (app *App) processTemplateDeleted(themeDir string, event *EventEntity) {
 }
 
 func (app *App) processAsset(themeDir string, event *EventEntity) {
+	fileName, err := event.data.GetString("_embedded", "item", "file_name")
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
 
+	dir := filepath.Join(themeDir, "assets")
+	err = os.MkdirAll(dir, 0700)
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
+	path := filepath.Join(dir, fileName)
+	link, err := event.data.GetString("_embedded", "item", "_links", "file", "href")
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
+	resp, err := http.Get(link)
+	defer resp.Body.Close()
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
+	out, err := os.Create(path)
+	defer out.Close()
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
+	_, err = io.Copy(out, resp.Body)
 }
 
 func (app *App) processAssetDeleted(themeDir string, event *EventEntity) {
-
+	fileName, err := event.data.GetString("item_slug")
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
+	path := filepath.Join(themeDir, "assets", fileName)
+	err = os.Remove(path)
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
 }
 
 func (app *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
