@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -104,17 +105,37 @@ func (app *App) prepareDir(event *EventEntity) (string, error) {
 }
 
 func (app *App) processTemplate(themeDir string, event *EventEntity) {
-	log.Printf("process template %s", event.CreatedOn)
 	fileName, err := event.data.GetString("_embedded", "item", "file_name")
 	if err != nil {
 		log.Println("ERR", err)
 		return
 	}
-	log.Println(fileName)
+	body, err := event.data.GetString("_embedded", "item", "body")
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
+	path := filepath.Join(themeDir, fileName)
+	err = ioutil.WriteFile(path, []byte(body), 0644)
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
+	log.Println(themeDir, fileName)
 }
 
 func (app *App) processTemplateDeleted(themeDir string, event *EventEntity) {
-
+	fileName, err := event.data.GetString("item_slug")
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
+	path := filepath.Join(themeDir, fileName)
+	err = os.Remove(path)
+	if err != nil {
+		log.Println("ERR", err)
+		return
+	}
 }
 
 func (app *App) processAsset(themeDir string, event *EventEntity) {
