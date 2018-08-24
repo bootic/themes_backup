@@ -8,8 +8,9 @@ This app listens to `themes.*` [Bootic webhooks](https://api.bootic.net/rels/sub
 go run main.go --host=localhost:3004 --dir /some/directory
 ```
 
-| options   | description                              | example          |
-| `--host`  | host:port to bind this app to            | `localhost:3004` |
+| options   | description                              | example           |
+|-----------|------------------------------------------|-------------------|
+| `--host`  | host:port to bind this app to            | `localhost:3004`  |
 | `--dir`   | directory path where to keep Git repos   | `/home/git/backup`|
 
 ### Deploy
