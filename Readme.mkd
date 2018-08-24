@@ -13,6 +13,12 @@ go run main.go --host=localhost:3004 --dir /some/directory
 | `--host`  | host:port to bind this app to            | `localhost:3004`  |
 | `--dir`   | directory path where to keep Git repos   | `/home/git/backup`|
 
+### Run tests
+
+```
+go test -v ./...
+```
+
 ### Deploy
 
 Compile locally with `go build` and upload binary to server, or pull this repo into server and `go install`.
