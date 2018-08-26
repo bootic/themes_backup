@@ -67,10 +67,21 @@ func NewEvent(reader io.Reader) (*EventEntity, error) {
 	return evt, nil
 }
 
+type fileGetter func(string) (io.ReadCloser, error)
+
+func httpGet(url string) (io.ReadCloser, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return resp.Body, err
+	}
+	return resp.Body, nil
+}
+
 type App struct {
 	router     *mux.Router
 	dir        string
 	eventsChan chan *EventEntity
+	GetFile    fileGetter
 }
 
 func (app *App) start() {
@@ -140,6 +151,18 @@ func (app *App) processTheme(themeDir string, data *jason.Object) (string, error
 			return "", err
 		}
 	}
+
+	assets, err := data.GetObjectArray("_embedded", "assets")
+	if err != nil {
+		// assets are optional, do not error out
+		return "", nil
+	}
+	for _, asset := range assets {
+		_, err = app.processAsset(themeDir, asset)
+		if err != nil {
+			return "", err
+		}
+	}
 	return "", nil
 }
 
@@ -191,8 +214,8 @@ func (app *App) processAsset(themeDir string, data *jason.Object) (string, error
 	if err != nil {
 		return fileName, err
 	}
-	resp, err := http.Get(link)
-	defer resp.Body.Close()
+	fileData, err := app.GetFile(link)
+	defer fileData.Close()
 	if err != nil {
 		return fileName, err
 	}
@@ -201,7 +224,7 @@ func (app *App) processAsset(themeDir string, data *jason.Object) (string, error
 	if err != nil {
 		return fileName, err
 	}
-	_, err = io.Copy(out, resp.Body)
+	_, err = io.Copy(out, fileData)
 	return fileName, err
 }
 
@@ -244,13 +267,17 @@ func (app *App) HandleEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, event.Topic, http.StatusNoContent)
 	}
 }
-func NewApp(dir string) http.Handler {
+func NewApp(dir string, getFunc fileGetter) http.Handler {
 	eventsChan := make(chan *EventEntity, 10)
 	router := mux.NewRouter()
+	if getFunc == nil {
+		getFunc = httpGet
+	}
 	app := &App{
 		router:     router,
 		dir:        dir,
 		eventsChan: eventsChan,
+		GetFile:    getFunc,
 	}
 	router.HandleFunc("/", RootHandler).Methods("GET")
 	router.HandleFunc("/events", app.HandleEvents).Methods("POST")

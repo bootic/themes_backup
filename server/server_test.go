@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -65,6 +66,40 @@ func TestHandleTemplateEvent(t *testing.T) {
 	}
 }
 
+func TestHandleAssetEvent(t *testing.T) {
+	srv := setup()
+	defer teardown()
+
+	evt := `{
+		"sequence": 1,
+		"shop_subdomain": "acme",
+		"topic": "themes.updated.assets.created",
+		"user_name": "Joe Bloggs",
+		"user_id": 123,
+		"created_on": "2018-08-10T20:00:00",
+		"_embedded": {
+			"item": {
+				"file_name": "logo.png",
+				"_links": {
+					"file": {
+						"href": "https://cdn.com/logo.png"
+					}
+				}
+			}
+		}
+	}`
+
+	rec := srv("POST", "/events", evt)
+	if rec.Code != 204 {
+		t.Errorf("Expected status 204, got %d - %s", rec.Code, rec.Body)
+	}
+
+	path := filepath.Join(DIR, "acme", "assets", "logo.png")
+	if !fileExists(path) {
+		t.Errorf("Expected file %s to exist, but it didn't", path)
+	}
+}
+
 func TestHandleThemeEvent(t *testing.T) {
 	srv := setup()
 	defer teardown()
@@ -84,6 +119,16 @@ func TestHandleThemeEvent(t *testing.T) {
 							"file_name": "foo.html",
 							"body": "Some HTML code here"
 						}
+					],
+					"assets": [
+						{
+							"file_name": "logo.png",
+							"_links": {
+								"file": {
+									"href": "https://cdn.com/logo.png"
+								}
+							}
+						}
 					]
 				}
 			}
@@ -100,8 +145,32 @@ func TestHandleThemeEvent(t *testing.T) {
 		t.Errorf("Expected file %s to exist, but it didn't", path)
 	}
 
+	path = filepath.Join(DIR, "acme", "assets", "logo.png")
+	if !fileExists(path) {
+		t.Errorf("Expected file %s to exist, but it didn't", path)
+	}
+
 	if msg, ok := commitExists("acme", "Joe Bloggs: updated theme - evt:1"); !ok {
 		t.Errorf("Expected Git commit, but was '%s'", msg)
+	}
+}
+
+type mockReadCloser struct {
+	io.Reader
+}
+
+func (m *mockReadCloser) Close() error {
+	return nil
+}
+
+func newMockReadCloser(str string) *mockReadCloser {
+	return &mockReadCloser{strings.NewReader(str)}
+}
+
+func mockFileGetter(url string) fileGetter {
+	rc := newMockReadCloser("test")
+	return func(string) (io.ReadCloser, error) {
+		return rc, nil
 	}
 }
 
@@ -112,7 +181,7 @@ func setup() func(string, string, string) *httptest.ResponseRecorder {
 		log.Fatal(err)
 	}
 
-	app := NewApp(DIR)
+	app := NewApp(DIR, mockFileGetter(""))
 
 	return func(method, path, json string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()

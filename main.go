@@ -24,7 +24,7 @@ func main() {
 	flag.StringVar(&dir, "dir", "./", "root directory to write Git repos into")
 	flag.Parse()
 
-	app := server.NewApp(dir)
+	app := server.NewApp(dir, nil)
 
 	log.Printf("Serving on %s. Writing files to %s", host, dir)
 	log.Fatal(http.ListenAndServe(host, handlers.LoggingHandler(os.Stdout, app)))
