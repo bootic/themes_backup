@@ -29,6 +29,7 @@ type EventEntity struct {
 	UserName      string
 	ItemType      string
 	ItemId        int64
+	Item          *jason.Object
 	CreatedOn     string
 	ShopSubdomain string
 	data          *jason.Object
@@ -49,6 +50,7 @@ func NewEvent(reader io.Reader) (*EventEntity, error) {
 	if err != nil {
 		return nil, err
 	}
+	item, _ := obj.GetObject("_embedded", "item")
 	subdomain, _ := obj.GetString("shop_subdomain")
 	eventId, _ := obj.GetInt64("sequence")
 	evt := &EventEntity{
@@ -58,6 +60,7 @@ func NewEvent(reader io.Reader) (*EventEntity, error) {
 		UserName:      userName,
 		CreatedOn:     createdOn,
 		ShopSubdomain: subdomain,
+		Item:          item,
 		data:          obj,
 	}
 
@@ -81,14 +84,17 @@ func (app *App) start() {
 			var fileName string
 			commit := true
 			switch event.Topic {
+			case "themes.updated":
+				_, err = app.processTheme(themeDir, event.Item)
+				fileName = "theme"
 			case "themes.updated.templates.updated", "themes.updated.templates.created":
-				fileName, err = app.processTemplate(themeDir, event)
+				fileName, err = app.processTemplate(themeDir, event.Item)
 			case "themes.updated.templates.deleted":
-				fileName, err = app.processTemplateDeleted(themeDir, event)
+				fileName, err = app.processTemplateDeleted(themeDir, event.data)
 			case "themes.updated.assets.updated", "themes.updated.assets.created":
-				fileName, err = app.processAsset(themeDir, event)
+				fileName, err = app.processAsset(themeDir, event.Item)
 			case "themes.updated.assets.deleted":
-				fileName, err = app.processAssetDeleted(themeDir, event)
+				fileName, err = app.processAssetDeleted(themeDir, event.data)
 			default:
 				commit = false
 			}
@@ -123,12 +129,26 @@ func (app *App) prepareDir(event *EventEntity) (string, error) {
 	return path, os.MkdirAll(path, 0700)
 }
 
-func (app *App) processTemplate(themeDir string, event *EventEntity) (string, error) {
-	fileName, err := event.data.GetString("_embedded", "item", "file_name")
+func (app *App) processTheme(themeDir string, data *jason.Object) (string, error) {
+	templates, err := data.GetObjectArray("_embedded", "templates")
+	if err != nil {
+		return "", err
+	}
+	for _, tpl := range templates {
+		_, err = app.processTemplate(themeDir, tpl)
+		if err != nil {
+			return "", err
+		}
+	}
+	return "", nil
+}
+
+func (app *App) processTemplate(themeDir string, data *jason.Object) (string, error) {
+	fileName, err := data.GetString("file_name")
 	if err != nil {
 		return fileName, err
 	}
-	body, err := event.data.GetString("_embedded", "item", "body")
+	body, err := data.GetString("body")
 	if err != nil {
 		return fileName, err
 	}
@@ -141,8 +161,8 @@ func (app *App) processTemplate(themeDir string, event *EventEntity) (string, er
 	return fileName, nil
 }
 
-func (app *App) processTemplateDeleted(themeDir string, event *EventEntity) (string, error) {
-	fileName, err := event.data.GetString("item_slug")
+func (app *App) processTemplateDeleted(themeDir string, data *jason.Object) (string, error) {
+	fileName, err := data.GetString("item_slug")
 	if err != nil {
 		return fileName, err
 	}
@@ -155,8 +175,8 @@ func (app *App) processTemplateDeleted(themeDir string, event *EventEntity) (str
 	return fileName, nil
 }
 
-func (app *App) processAsset(themeDir string, event *EventEntity) (string, error) {
-	fileName, err := event.data.GetString("_embedded", "item", "file_name")
+func (app *App) processAsset(themeDir string, data *jason.Object) (string, error) {
+	fileName, err := data.GetString("file_name")
 	if err != nil {
 		return fileName, err
 	}
@@ -167,7 +187,7 @@ func (app *App) processAsset(themeDir string, event *EventEntity) (string, error
 		return fileName, err
 	}
 	path := filepath.Join(dir, fileName)
-	link, err := event.data.GetString("_embedded", "item", "_links", "file", "href")
+	link, err := data.GetString("_links", "file", "href")
 	if err != nil {
 		return fileName, err
 	}
@@ -185,8 +205,8 @@ func (app *App) processAsset(themeDir string, event *EventEntity) (string, error
 	return fileName, err
 }
 
-func (app *App) processAssetDeleted(themeDir string, event *EventEntity) (string, error) {
-	fileName, err := event.data.GetString("item_slug")
+func (app *App) processAssetDeleted(themeDir string, data *jason.Object) (string, error) {
+	fileName, err := data.GetString("item_slug")
 	if err != nil {
 		return fileName, err
 	}
