@@ -26,6 +26,6 @@ func main() {
 
 	app := server.NewApp(dir, nil)
 
-	log.Printf("Serving on %s. Writing files to %s", host, dir)
+	log.Printf("Serving on %s (PID %d). Writing files to %s", host, os.Getpid(), dir)
 	log.Fatal(http.ListenAndServe(host, handlers.LoggingHandler(os.Stdout, app)))
 }
