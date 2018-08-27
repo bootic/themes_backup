@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -135,9 +136,17 @@ func TestHandleThemeEvent(t *testing.T) {
 		}
 	}`
 
+	// save a previous template. Should be deleted
+	oldFile := filepath.Join(DIR, "acme", "nope.html")
+	touchFile(filepath.Join(DIR, "acme"), "nope.html")
+
 	rec := srv("POST", "/events", evt)
 	if rec.Code != 204 {
 		t.Errorf("Expected status 204, got %d - %s", rec.Code, rec.Body)
+	}
+
+	if fileExists(oldFile) {
+		t.Errorf("Expected file %s to NOT exist, but it did", oldFile)
 	}
 
 	path := filepath.Join(DIR, "acme", "foo.html")
@@ -209,7 +218,11 @@ func teardown() {
 
 func fileExists(path string) bool {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
+		log.Println(path, false)
 		return false
+	} else if err != nil {
+		log.Println("AAAA", path, err)
+		return true
 	} else {
 		return true
 	}
@@ -225,4 +238,14 @@ func commitExists(subdomain, line string) (string, bool) {
 		log.Fatal(err)
 	}
 	return out.String(), (out.String() == line)
+}
+
+func touchFile(dir, fileName string) {
+	os.MkdirAll(dir, 0700)
+	d1 := []byte("hello\ngo\n")
+	f := filepath.Join(dir, fileName)
+	err := ioutil.WriteFile(f, d1, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
 }

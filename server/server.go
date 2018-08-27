@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -141,6 +142,14 @@ func (app *App) prepareDir(event *EventEntity) (string, error) {
 }
 
 func (app *App) processTheme(themeDir string, data *jason.Object) (string, error) {
+	// remove all previous files
+	matches, _ := filepath.Glob(themeDir + "/*.*")
+	for _, f := range matches {
+		if path.Base(f) != ".git" {
+			os.RemoveAll(f)
+		}
+	}
+
 	templates, err := data.GetObjectArray("_embedded", "templates")
 	if err != nil {
 		return "", err
