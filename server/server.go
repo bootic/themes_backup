@@ -48,9 +48,6 @@ func NewEvent(reader io.Reader) (*EventEntity, error) {
 	userId, _ := obj.GetInt64("user_id")
 	userName, _ := obj.GetString("user_name")
 	createdOn, _ := obj.GetString("created_on")
-	if err != nil {
-		return nil, err
-	}
 	item, _ := obj.GetObject("_embedded", "item")
 	subdomain, _ := obj.GetString("shop_subdomain")
 	eventId, _ := obj.GetInt64("sequence")
@@ -137,7 +134,22 @@ func (app *App) prepareDir(event *EventEntity) (string, error) {
 	if event.ShopSubdomain == "" {
 		return "", errors.New("Missing shop subdomain")
 	}
+
+	// if item is a theme, it should have a 'production' property
+	isProd, err := obj.Item.GetBoolean("production")
+	if err != nil {
+		// ok, looks like the item is an asset or template
+		isProd, err := obj.Item.Theme.GetBoolean("production")
+		if err != nil {
+			return "", err
+		}
+	}
+
 	path := filepath.Join(app.dir, event.ShopSubdomain)
+	if (!prod) {
+		path += "-dev"			
+	}
+
 	return path, os.MkdirAll(path, 0700)
 }
 
