@@ -158,7 +158,7 @@ func (app *App) prepareDir(event *EventEntity, isTheme bool) (string, error) {
 		path += "-dev"
 	}
 
-	return path, os.MkdirAll(path, 0700)
+	return path, os.MkdirAll(path, 0755)
 }
 
 func (app *App) processTheme(themeDir string, data *jason.Object) (string, error) {
@@ -234,7 +234,7 @@ func (app *App) processAsset(themeDir string, data *jason.Object) (string, error
 	}
 
 	dir := filepath.Join(themeDir, "assets")
-	err = os.MkdirAll(dir, 0700)
+	err = os.MkdirAll(dir, 0755)
 	if err != nil {
 		return fileName, err
 	}
