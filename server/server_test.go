@@ -67,6 +67,46 @@ func TestHandleTemplateEvent(t *testing.T) {
 	}
 }
 
+func TestHandleDevTemplateEvent(t *testing.T) {
+	srv := setup()
+	defer teardown()
+
+	evt := `{
+		"sequence": 1,
+		"shop_subdomain": "grog",
+		"topic": "themes.updated.templates.created",
+		"user_name": "Joe Bloggs",
+		"user_id": 123,
+		"created_on": "2018-08-10T20:00:00",
+		"_embedded": {
+			"item": {
+				"file_name": "foo.html",
+				"body": "Some HTML code here",
+				"_embedded": {
+					"theme": {
+						"id": "22",
+						"production": false
+					}
+				}
+			}
+		}
+	}`
+
+	rec := srv("POST", "/events", evt)
+	if rec.Code != 204 {
+		t.Errorf("Expected status 204, got %d - %s", rec.Code, rec.Body)
+	}
+
+	path := filepath.Join(DIR, "grog-dev", "foo.html")
+	if !fileExists(path) {
+		t.Errorf("Expected file %s to exist, but it didn't", path)
+	}
+
+	if msg, ok := commitExists("grog-dev", "Joe Bloggs: created foo.html - evt:1"); !ok {
+		t.Errorf("Expected Git commit, but was '%s'", msg)
+	}
+}
+
 func TestHandleAssetEvent(t *testing.T) {
 	srv := setup()
 	defer teardown()
@@ -163,6 +203,72 @@ func TestHandleThemeEvent(t *testing.T) {
 		t.Errorf("Expected Git commit, but was '%s'", msg)
 	}
 }
+
+
+func TestHandleDevThemeEvent(t *testing.T) {
+	srv := setup()
+	defer teardown()
+
+	evt := `{
+		"sequence": 1,
+		"shop_subdomain": "acme",
+		"topic": "themes.updated",
+		"user_name": "Joe Bloggs",
+		"user_id": 123,
+		"created_on": "2018-08-10T20:00:00",
+		"_embedded": {
+			"item": {
+				"production": false,
+				"_embedded": {
+					"templates": [
+						{
+							"file_name": "foo.html",
+							"body": "Some HTML code here"
+						}
+					],
+					"assets": [
+						{
+							"file_name": "logo.png",
+							"_links": {
+								"file": {
+									"href": "https://cdn.com/logo.png"
+								}
+							}
+						}
+					]
+				}
+			}
+		}
+	}`
+
+	// save a previous template. Should be deleted
+	oldFile := filepath.Join(DIR, "acme-dev", "nope.html")
+	touchFile(filepath.Join(DIR, "acme-dev"), "nope.html")
+
+	rec := srv("POST", "/events", evt)
+	if rec.Code != 204 {
+		t.Errorf("Expected status 204, got %d - %s", rec.Code, rec.Body)
+	}
+
+	if fileExists(oldFile) {
+		t.Errorf("Expected file %s to NOT exist, but it did", oldFile)
+	}
+
+	path := filepath.Join(DIR, "acme-dev", "foo.html")
+	if !fileExists(path) {
+		t.Errorf("Expected file %s to exist, but it didn't", path)
+	}
+
+	path = filepath.Join(DIR, "acme-dev", "assets", "logo.png")
+	if !fileExists(path) {
+		t.Errorf("Expected file %s to exist, but it didn't", path)
+	}
+
+	if msg, ok := commitExists("acme-dev", "Joe Bloggs: updated theme - evt:1"); !ok {
+		t.Errorf("Expected Git commit, but was '%s'", msg)
+	}
+}
+
 
 type mockReadCloser struct {
 	io.Reader

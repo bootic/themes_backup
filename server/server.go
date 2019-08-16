@@ -48,9 +48,6 @@ func NewEvent(reader io.Reader) (*EventEntity, error) {
 	userId, _ := obj.GetInt64("user_id")
 	userName, _ := obj.GetString("user_name")
 	createdOn, _ := obj.GetString("created_on")
-	if err != nil {
-		return nil, err
-	}
 	item, _ := obj.GetObject("_embedded", "item")
 	subdomain, _ := obj.GetString("shop_subdomain")
 	eventId, _ := obj.GetInt64("sequence")
@@ -88,7 +85,7 @@ type App struct {
 func (app *App) start() {
 	for event := range app.eventsChan {
 		log.Printf("RECEIVED EVENT %s", event.Topic)
-		themeDir, err := app.prepareDir(event)
+		themeDir, err := app.prepareDir(event, event.Topic == "themes.updated")
 		if err != nil {
 			log.Printf("Could not prepare directory for %s. %s", event.ShopSubdomain, err.Error())
 		} else {
@@ -114,7 +111,7 @@ func (app *App) start() {
 			if err != nil {
 				log.Printf("Error processing %s: %s", event.Topic, err.Error())
 			} else if commit {
-				err = app.commit(event.ShopSubdomain, fileName, event)
+				err = app.commit(themeDir, fileName, event)
 				if err != nil {
 					log.Printf("Error committing %s: %s", event.Topic, err.Error())
 				}
@@ -123,22 +120,44 @@ func (app *App) start() {
 	}
 }
 
-func (app *App) commit(subdomain, fileName string, event *EventEntity) error {
-	dir := filepath.Join(app.dir, subdomain)
+func (app *App) commit(themeDir, fileName string, event *EventEntity) error {
 	segments := strings.Split(event.Topic, ".")
 	action := segments[len(segments)-1]
 	logLine := event.UserName + ": " + action + " " + fileName + " - evt:" + strconv.FormatInt(event.EventId, 10)
-	cmdStr := "cd " + dir + " && git init . && git add --all . && git commit -m '" + logLine + "'"
+	cmdStr := "cd " + themeDir + " && git init . && git add --all . && git commit -m '" + logLine + "'"
 	cmd := exec.Command("bash", "-c", cmdStr)
 	return cmd.Run()
 }
 
-func (app *App) prepareDir(event *EventEntity) (string, error) {
+func (app *App) prepareDir(event *EventEntity, isTheme bool) (string, error) {
 	if event.ShopSubdomain == "" {
 		return "", errors.New("Missing shop subdomain")
 	}
+
+	isDevTheme := false
+
+	// if item is a theme, it should have a 'production' property
+	if isTheme {
+		isProd, err := event.Item.GetBoolean("production")
+		if err == nil {
+			isDevTheme = !isProd
+		}
+	} else { // ok, looks like the item is an asset or template
+		theme, _ := event.Item.GetObject("_embedded", "theme")
+		if theme != nil {
+			isProd, err := theme.GetBoolean("production")
+			if err == nil {
+				isDevTheme = !isProd
+			}
+		}
+	}
+
 	path := filepath.Join(app.dir, event.ShopSubdomain)
-	return path, os.MkdirAll(path, 0700)
+	if isDevTheme {
+		path += "-dev"
+	}
+
+	return path, os.MkdirAll(path, 0755)
 }
 
 func (app *App) processTheme(themeDir string, data *jason.Object) (string, error) {
@@ -214,7 +233,7 @@ func (app *App) processAsset(themeDir string, data *jason.Object) (string, error
 	}
 
 	dir := filepath.Join(themeDir, "assets")
-	err = os.MkdirAll(dir, 0700)
+	err = os.MkdirAll(dir, 0755)
 	if err != nil {
 		return fileName, err
 	}
