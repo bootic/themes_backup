@@ -136,21 +136,17 @@ func (app *App) prepareDir(event *EventEntity, boolean isTheme) (string, error) 
 	}
 
 	// if item is a theme, it should have a 'production' property
-	if (isTheme) {
+	if isTheme {
 		isProd, err := obj.Item.GetBoolean("production")
 	} else { // ok, looks like the item is an asset or template
-		theme, err := obj.Item.getObject("_embedded", "theme")
+		theme, err := obj.Item.GetObject("_embedded", "theme")
 		if err != nil {
 			isProd, err := theme.GetBoolean("production")		
 		}
 	}
 
-	if err != nil { 
-		isProd = true	
-	}
-
 	path := filepath.Join(app.dir, event.ShopSubdomain)
-	if (!isProd) {
+	if err != nil && !isProd {
 		path += "-dev"			
 	}
 
