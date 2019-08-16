@@ -130,24 +130,32 @@ func (app *App) commit(subdomain, fileName string, event *EventEntity) error {
 	return cmd.Run()
 }
 
-func (app *App) prepareDir(event *EventEntity, boolean isTheme) (string, error) {
+func (app *App) prepareDir(event *EventEntity, isTheme bool) (string, error) {
 	if event.ShopSubdomain == "" {
 		return "", errors.New("Missing shop subdomain")
 	}
 
+	isDevTheme := false
+
 	// if item is a theme, it should have a 'production' property
 	if isTheme {
-		isProd, err := obj.Item.GetBoolean("production")
-	} else { // ok, looks like the item is an asset or template
-		theme, err := obj.Item.GetObject("_embedded", "theme")
+		isProd, err := event.Item.GetBoolean("production")
 		if err != nil {
-			isProd, err := theme.GetBoolean("production")		
+			isDevTheme = !isProd
+		}
+	} else { // ok, looks like the item is an asset or template
+		theme, err := event.Item.GetObject("_embedded", "theme")
+		if err != nil {
+			isProd, err := theme.GetBoolean("production")
+			if err != nil {
+				isDevTheme = !isProd
+			}
 		}
 	}
 
 	path := filepath.Join(app.dir, event.ShopSubdomain)
-	if err != nil && !isProd {
-		path += "-dev"			
+	if isDevTheme {
+		path += "-dev"
 	}
 
 	return path, os.MkdirAll(path, 0700)
