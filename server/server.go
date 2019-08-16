@@ -85,7 +85,7 @@ type App struct {
 func (app *App) start() {
 	for event := range app.eventsChan {
 		log.Printf("RECEIVED EVENT %s", event.Topic)
-		themeDir, err := app.prepareDir(event)
+		themeDir, err := app.prepareDir(event, event.Topic == "themes.updated")
 		if err != nil {
 			log.Printf("Could not prepare directory for %s. %s", event.ShopSubdomain, err.Error())
 		} else {
@@ -130,23 +130,27 @@ func (app *App) commit(subdomain, fileName string, event *EventEntity) error {
 	return cmd.Run()
 }
 
-func (app *App) prepareDir(event *EventEntity) (string, error) {
+func (app *App) prepareDir(event *EventEntity, boolean isTheme) (string, error) {
 	if event.ShopSubdomain == "" {
 		return "", errors.New("Missing shop subdomain")
 	}
 
 	// if item is a theme, it should have a 'production' property
-	isProd, err := obj.Item.GetBoolean("production")
-	if err != nil {
-		// ok, looks like the item is an asset or template
-		isProd, err := obj.Item.Theme.GetBoolean("production")
+	if (isTheme) {
+		isProd, err := obj.Item.GetBoolean("production")
+	} else { // ok, looks like the item is an asset or template
+		theme, err := obj.Item.getObject("_embedded", "theme")
 		if err != nil {
-			return "", err
+			isProd, err := theme.GetBoolean("production")		
 		}
 	}
 
+	if err != nil { 
+		isProd = true	
+	}
+
 	path := filepath.Join(app.dir, event.ShopSubdomain)
-	if (!prod) {
+	if (!isProd) {
 		path += "-dev"			
 	}
 
